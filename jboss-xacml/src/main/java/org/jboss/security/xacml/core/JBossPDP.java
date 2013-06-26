@@ -295,8 +295,13 @@ public class JBossPDP implements PolicyDecisionPoint, Serializable
       }
       
       ResponseCtx resp = null;
-      if(!lockFree || useRWLock){
-         lock.lock();
+
+      if (!lockFree) {
+          if (useRWLock) {
+              rwLock.readLock().lock();
+          } else {
+              lock.lock();
+          }
       }
       try
       {
@@ -321,22 +326,35 @@ public class JBossPDP implements PolicyDecisionPoint, Serializable
             //add it to cache locators
             if( cacheLocatorsLength > 0 )
             {
-               for( int i = 0 ; i < cacheLocatorsLength; i++ )
-               {
-                  CacheLocator cacheLocator = cacheLocators.get(i);
-                  if( cacheLocator instanceof DecisionCacheLocator  )
-                  {
-                     ( ( DecisionCacheLocator ) cacheLocator ).add( req, resp );
-                  } 
+               if (!lockFree && useRWLock) {
+                   rwLock.writeLock().lock();
+               }
+               try {
+                   for( int i = 0 ; i < cacheLocatorsLength; i++ )
+                   {
+                      CacheLocator cacheLocator = cacheLocators.get(i);
+                      if( cacheLocator instanceof DecisionCacheLocator  )
+                      {
+                         ( ( DecisionCacheLocator ) cacheLocator ).add( req, resp );
+                      }
+                   }
+               } finally {
+                   if (!lockFree && useRWLock) {
+                       rwLock.writeLock().unlock();
+                   }
                }
             }  
          }  
       }
       finally
       {
-         if(!lockFree || useRWLock){
-            lock.unlock();
-         }
+          if (!lockFree) {
+              if (useRWLock) {
+                  rwLock.readLock().unlock();
+              } else {
+                  lock.unlock();
+              }
+          }
       }
 
       ResponseContext response = RequestResponseContextFactory.createResponseContext();
@@ -463,7 +481,6 @@ public class JBossPDP implements PolicyDecisionPoint, Serializable
           }
           if("readwrite".equalsIgnoreCase(lockStatus)){
               useRWLock =true;
-              lock = rwLock.writeLock();
           }
       }
       AttributeFinder attributeFinder = new AttributeFinder();
